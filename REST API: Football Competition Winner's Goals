@@ -9,11 +9,11 @@ process.stdin.setEncoding('utf-8');
 let inputString = '';
 let currentLine = 0;
 
-process.stdin.on('data', function (inputStdin) {
+process.stdin.on('data', function(inputStdin) {
     inputString += inputStdin;
 });
 
-process.stdin.on('end', function () {
+process.stdin.on('end', function() {
     inputString = inputString.split('\n');
     main();
 });
@@ -22,58 +22,67 @@ function readLine() {
     return inputString[currentLine++];
 }
 
+async function fetchGoals(team, teamParam, competition, year) {
+    let goals = 0;
+    let page = 1;
+    const MATCHES_URL = 'https://jsonmock.hackerrank.com/api/football_matches';
+
+    while (true) {
+        console.log(`Fetching ${teamParam} data for ${team}, Page: ${page}`);
+
+        const response = await axios.get(MATCHES_URL, {
+            params: {
+                year: year.toString(),
+                [teamParam]: team,
+                page: page
+            }
+        });
+
+        if (!response.data.data.length) break;
+
+        response.data.data.forEach(match => {
+            // ✅ New Fix: Filter only the matches belonging to the given competition
+            if (match.competition === competition) {
+                let goalKey = `${teamParam}goals`;
+                let matchGoals = parseInt(match[goalKey] || '0', 10);
+                console.log(`Match Goals (${goalKey}):`, matchGoals);
+                goals += matchGoals;
+            }
+        });
+
+        if (page >= response.data.total_pages) break;
+        page++;
+    }
+
+    console.log(`${team} Total Goals as ${teamParam}:`, goals);
+    return goals;
+}
+
 async function getWinnerTotalGoals(competition, year) {
-    const URL_COMPETITION = 'https://jsonmock.hackerrank.com/api/football_competitions';
-    const URL_MATCHES = 'https://jsonmock.hackerrank.com/api/football_matches';
+    const COMPETITIONS_URL = 'https://jsonmock.hackerrank.com/api/football_competitions';
 
     try {
-        // Fetch competition details
-        const compResponse = await axios.get(URL_COMPETITION, {
+        // Fetch the competition details to get the winning team
+        const response = await axios.get(COMPETITIONS_URL, {
             params: { name: competition, year: year.toString() }
         });
 
-        if (compResponse.data.data.length === 0) {
-            return 0; // No competition found
+        if (!response.data.data.length) {
+            console.log("No data found for this competition and year.");
+            return 0;
         }
 
-        const winnerTeam = compResponse.data.data[0].winner;
-        let totalGoals = 0;
+        const winnerTeam = response.data.data[0].winner;
+        console.log(`Winner Team: ${winnerTeam}`);
 
-        // Function to fetch goals for a given team as team1 or team2
-        async function getTeamGoals(team, teamParam) {
-            let goals = 0;
-            let page = 1;
-            let totalPages = 1;
+        // Fetch total goals by this team
+        let totalGoals = await fetchGoals(winnerTeam, 'team1', competition, year);
+        totalGoals += await fetchGoals(winnerTeam, 'team2', competition, year);
 
-            while (page <= totalPages) {
-                const response = await axios.get(URL_MATCHES, {
-                    params: {
-                        year: year.toString(),
-                        [teamParam]: team,
-                        page: page
-                    }
-                });
-
-                if (response.data.data.length === 0) break;
-
-                totalPages = response.data.total_pages;
-                response.data.data.forEach(match => {
-                    goals += parseInt(match[`${teamParam}goals`] || 0);
-                });
-
-                page++;
-            }
-
-            return goals;
-        }
-
-        // Fetch goals scored by the winning team as both team1 and team2
-        totalGoals += await getTeamGoals(winnerTeam, 'team1');
-        totalGoals += await getTeamGoals(winnerTeam, 'team2');
-
+        console.log(`Final Total Goals for ${winnerTeam}:`, totalGoals);
         return totalGoals;
     } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error("Error fetching data:", error);
         return 0;
     }
 }
